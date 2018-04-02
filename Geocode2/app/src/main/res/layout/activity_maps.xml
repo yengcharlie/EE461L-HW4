@@ -29,6 +29,15 @@ android:layout_height="match_parent"
             android:layout_weight="1"
             android:onClick="zoomIn"
             android:text="Zoom In" />
+        <Button
+            android:id="@+id/button4"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:onClick="onClickWhataburger"
+            android:text="Whataburger"
+            android:layout_alignParentRight="true" />
+
     </LinearLayout>
 
     <LinearLayout

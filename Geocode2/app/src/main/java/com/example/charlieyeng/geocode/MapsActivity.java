@@ -1,13 +1,25 @@
 package com.example.charlieyeng.geocode;
 
+import android.app.DownloadManager;
 import android.location.Address;
 import android.location.Geocoder;
+import android.net.Uri;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.Toast;
+
+
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.Volley;
+
 
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
@@ -17,12 +29,20 @@ import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
     int zoomLevel = 15;
     private GoogleMap mMap;
+    double currentLat;
+    double currentLng;
+    String currentzip;
+    String currentcountry;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,56 +75,65 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
     private void gotoLocation(double lat, double lng, float zoom){
-        LatLng ll = new LatLng(lat,lng);
-        CameraUpdate update = CameraUpdateFactory.newLatLngZoom(ll,zoom);
+        LatLng latLng = new LatLng(lat,lng);
+        CameraUpdate update = CameraUpdateFactory.newLatLngZoom(latLng,zoom);
         mMap.moveCamera(update);
     }
 
     public void geoLocate(View v) throws IOException{
-        hideSoftKeyboard(v);
+        keyboard(v);
         try {
-            EditText et = (EditText) findViewById(R.id.editText1);
-            String location = et.getText().toString();
+            EditText editText = (EditText) findViewById(R.id.editText1);
+            String location = editText.getText().toString();
 
-            Geocoder gc = new Geocoder(this);
-            List<Address> list = gc.getFromLocationName(location, 10);
-            if (list.size() > 1) {
-                for (Address ad : list) {
-                    String local = ad.getLocality();
-                    Toast.makeText(this, local, Toast.LENGTH_LONG).show();
-                }
+            Geocoder geocoder = new Geocoder(this);
+            List<Address> list = geocoder.getFromLocationName(location, 10);
+            if (list.size() == 0) {
+                getLocationFromAddress(location, 0); //this is function to find place by landmark/location name id addressList returns nothing
             }
-            Address add = list.get(0);
-            String locality = add.getLocality();
-            Toast.makeText(this, locality, Toast.LENGTH_LONG).show();
+            else {
+                if (list.size() > 1) {
+                    for (Address ad : list) {
+                        String local = ad.getLocality();
+                        Toast.makeText(this, local, Toast.LENGTH_LONG).show();//adds the additional addresses if there are any
+                    }
+                }
+                Address add = list.get(0);
+                currentzip = add.getLocality();
+                currentcountry = add.getCountryCode();
 
-            double lat = add.getLatitude();
-            double lng = add.getLongitude();
+                String locality = add.getLocality();
+                Toast.makeText(this, locality, Toast.LENGTH_LONG).show();
 
-            gotoLocation(lat, lng, 10);
+                double lat = add.getLatitude();
+                double lng = add.getLongitude();
+                currentLat = lat;
+                currentLng = lng;
+                gotoLocation(lat, lng, 10);
+            }
         }
         catch(Exception e){
             Toast.makeText(this, "No valid location entered", Toast.LENGTH_LONG).show();
         }
     }
 
-    private void hideSoftKeyboard(View v){
-        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+    private void keyboard(View v){
+        InputMethodManager input = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        input.hideSoftInputFromWindow(v.getWindowToken(), 0);
     }
 
     public void calculateDistance(View v) throws IOException{
         try {
-            hideSoftKeyboard(v);
-            EditText et1 = (EditText) findViewById(R.id.editText1);
-            EditText et2 = (EditText) findViewById(R.id.editText2);
+            keyboard(v);
+            EditText editText1 = (EditText) findViewById(R.id.editText1);
+            EditText editText2 = (EditText) findViewById(R.id.editText2);
 
-            String location1 = et1.getText().toString();
-            String location2 = et2.getText().toString();
+            String location1 = editText1.getText().toString();
+            String location2 = editText2.getText().toString();
 
-            Geocoder gc = new Geocoder(this);
-            List<Address> list1 = gc.getFromLocationName(location1, 10);
-            List<Address> list2 = gc.getFromLocationName(location2, 10);
+            Geocoder geocoder = new Geocoder(this);
+            List<Address> list1 = geocoder.getFromLocationName(location1, 10);
+            List<Address> list2 = geocoder.getFromLocationName(location2, 10);
 
             Address add1 = list1.get(0);
             Address add2 = list2.get(0);
@@ -114,8 +143,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             Toast.makeText(this, locality2, Toast.LENGTH_LONG).show();
 
 
-            double lat1 = add1.getLatitude();
-            double lng1 = add1.getLongitude();
+            double lat1 = currentLat;
+            double lng1 = currentLng;
 
             double lat2 = add2.getLatitude();
             double lng2 = add2.getLongitude();
@@ -133,8 +162,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
     public double getDistanceFrom( double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371; // Radius of the earth in km
-        double dLat = deg2rad(lat2-lat1);  // deg2rad below
+        double radius = 6371; // Radius of the earth in km
+        double dLat = deg2rad(lat2-lat1);  // convert to radians
         double dLon = deg2rad(lon2-lon1);
         double a =
                 Math.sin(dLat/2) * Math.sin(dLat/2) +
@@ -142,7 +171,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                                 Math.sin(dLon/2) * Math.sin(dLon/2)
                 ;
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        double d = R * c; // Distance in km
+        double d = radius * c; // Distance in km
         return d;
     }
 
@@ -151,25 +180,10 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     }
 
     public void zoomIn(View v){
-        hideSoftKeyboard(v);
+        //keyboard(v);
         try {
-            EditText et = (EditText) findViewById(R.id.editText1);
-            String location = et.getText().toString();
-
-            Geocoder gc = new Geocoder(this);
-            List<Address> list = gc.getFromLocationName(location, 10);
-            if (list.size() > 1) {
-                for (Address ad : list) {
-                    String local = ad.getLocality();
-                    Toast.makeText(this, local, Toast.LENGTH_LONG).show();
-                }
-            }
-            Address add = list.get(0);
-            String locality = add.getLocality();
-            Toast.makeText(this, locality, Toast.LENGTH_LONG).show();
-
-            double lat = add.getLatitude();
-            double lng = add.getLongitude();
+            double lat = currentLat;
+            double lng = currentLng;
             zoomLevel=zoomLevel+1;
             gotoLocation(lat, lng, zoomLevel);
         }
@@ -179,25 +193,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
     }
     public void zoomOut(View v){
-        hideSoftKeyboard(v);
+        //keyboard(v);
         try {
-            EditText et = (EditText) findViewById(R.id.editText1);
-            String location = et.getText().toString();
 
-            Geocoder gc = new Geocoder(this);
-            List<Address> list = gc.getFromLocationName(location, 10);
-            if (list.size() > 1) {
-                for (Address ad : list) {
-                    String local = ad.getLocality();
-                    Toast.makeText(this, local, Toast.LENGTH_LONG).show();
-                }
-            }
-            Address add = list.get(0);
-            String locality = add.getLocality();
-            Toast.makeText(this, locality, Toast.LENGTH_LONG).show();
-
-            double lat = add.getLatitude();
-            double lng = add.getLongitude();
+            double lat = currentLat;
+            double lng = currentLng;
             zoomLevel = zoomLevel-1;
             gotoLocation(lat, lng, zoomLevel);
         }
@@ -206,4 +206,83 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         }
 
     }
+    public void getLocationFromAddress(String address, final int x) {
+
+
+        String url1 = "https://maps.googleapis.com/maps/api/geocode/json?address=%22whataburger%22&components=locality:"+currentzip+"|country:"+currentcountry+"&sensor=false";
+
+        String url = "https://maps.googleapis.com/maps/api/geocode/json?address="
+                + Uri.encode(address) + "&sensor=false";
+        if(x==1) {
+            url = url1;
+        }
+        RequestQueue requestQueue = Volley.newRequestQueue(this);
+
+        JsonObjectRequest req = new JsonObjectRequest(Request.Method.GET, url, null, new Response.Listener<JSONObject>() {
+            @Override
+            public void onResponse(JSONObject response) {
+                JSONObject location;
+                try {
+                    // Get JSON Array called "results" and then get the 0th
+                    // complete object as JSON
+                    if (x == 1) {
+                        for (int i = 0; i < response.getJSONArray("results").length(); i++) {
+                            location = response.getJSONArray("results").getJSONObject(i).getJSONObject("geometry").getJSONObject("location");
+
+                            // Get the value of the attribute whose name is
+                            // "formatted_string"
+                            if (location.getDouble("lat") != 0 && location.getDouble("lng") != 0) {
+                                LatLng latLng = new LatLng(location.getDouble("lat"), location.getDouble("lng"));
+                                currentLat = latLng.latitude;
+
+                                currentLng = latLng.longitude;
+
+                                CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(latLng, 13);
+                                mMap.addMarker(new MarkerOptions().position(latLng).title("Whataburger"));
+                                mMap.moveCamera(cameraUpdate);
+                            }
+
+                        }
+                    } else {
+                        location = response.getJSONArray("results").getJSONObject(0).getJSONObject("geometry").getJSONObject("location");
+
+                        // Get the value of the attribute whose name is
+                        // "formatted_string"
+                        if (location.getDouble("lat") != 0 && location.getDouble("lng") != 0) {
+                            LatLng latLng = new LatLng(location.getDouble("lat"), location.getDouble("lng"));
+                            currentLat = latLng.latitude;
+
+                            currentLng = latLng.longitude;
+
+                            CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(latLng, 13);
+                            mMap.moveCamera(cameraUpdate);
+
+                            //Do what you want
+                        }
+                    }
+                } catch (JSONException e1) {
+                    e1.printStackTrace();
+                    Toast.makeText(getApplicationContext(), "Not found", Toast.LENGTH_SHORT).show();
+
+                }
+            }
+
+        }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                Log.d("Error.Response", error.toString());
+            }
+        });
+        requestQueue.add(req);
+    }
+
+    public void onClickWhataburger (View view) {
+
+        getLocationFromAddress("Whataburger", 1);
+
+    }
+
+
+
+
 }
